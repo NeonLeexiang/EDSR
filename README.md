@@ -35,21 +35,14 @@
 
 
 ## Datasets
-
 之前我们的 `SRCNN` 使用的是 `cifar-10` , 那个数据集不是很好用，因为它的原始数据就是 `32 * 32` 大小的，
 不太适合放大缩小。我们尝试试试其他的数据集看看效果会是怎样。  
 然后我们选用一个比较大的数据集也就是我们的 `BSD500` 的数据集。
-数据集选用的是 `BSD500` 但是我们截取成为 `256*256`。  
-然后通过我们的 `SRGAN` 网络 `generator` 超分辨为 `256*256`
-
+数据集选用的是 `BSD500` 但是我们截取成为 `128*128`。  
 
 
 ## Prerequisites
- * Tensorflow  > 2.0  
- * Keras > 2.0
  * pytorch > 1.0
-也是想着通过这个项目去尝试使用 `Tensorflow 2.0` 以及架构在它上面的 `Keras` 然后复现一下超分辨比较经典的论文 `SRGAN` .    
-也想尝试下对于更加复杂的 `GAN` 神经网络去尝试更加实用的 `pytorch` 框架。
 
 
 ## Usage
@@ -59,27 +52,68 @@ For training, `python trains.py`
 For testing, `python trains.py` 暂时没有写对应的 `test.py`
 
 
+## EDSR Problems:
+可能是因为 `MeanShift` 的原因，图像的像素转化有些问题，导致 `pnsr` 值非常低同时整个图像像素也很奇怪。
+同时对 `MeanShift` 的了解不够多，一开始的 `rgb range` 设定为255，其实没有注意到 `ToTensor()` 
+的时候，函数已经帮转化成0到1之间的浮点类型数了。
 
-## Problems  
-目前因为分配的显存没有办法做到大小为 `256*256` 的超分辨，所以 `torch.cuda()` 会超出显存大小，
-如果我们将整个网络的大小缩放放小，我们的训练将会更加快速。    
-  
-有一个想法就是我们缩放我们的 `crop_size=128` 同时因为我们是喂入一个 `batch` 的数据进入 `cuda` ， 
-我们可以设置我们的 `batch_size` 更小，虽说一个 `epoch` 会训练更多速度，但是相应的训练速度也会更快。
-同时我们也需要考虑我们的数据过拟合的情况。
 
-* 因为使用的是 `cifar10`的数据集，会出现的问题就是它的图像数据的大小是 `32*32` 的，
-  所以没有做一些放大缩小的操作获取对应的 High Resolution Image -> Low Resolution Image 的操作。
+[comment]: <> (## Problems  )
+
+[comment]: <> (目前因为分配的显存没有办法做到大小为 `256*256` 的超分辨，所以 `torch.cuda&#40;&#41;` 会超出显存大小，)
+
+[comment]: <> (如果我们将整个网络的大小缩放放小，我们的训练将会更加快速。    )
   
-* 做的 `Keras` 和 `Tensorflow` 的训练并没有像 `Pytorch` 一样使用 `tqdm` 模块去做一些操作。  
+[comment]: <> (有一个想法就是我们缩放我们的 `crop_size=128` 同时因为我们是喂入一个 `batch` 的数据进入 `cuda` ， )
+
+[comment]: <> (我们可以设置我们的 `batch_size` 更小，虽说一个 `epoch` 会训练更多速度，但是相应的训练速度也会更快。)
+
+[comment]: <> (同时我们也需要考虑我们的数据过拟合的情况。)
+
+[comment]: <> (* 因为使用的是 `cifar10`的数据集，会出现的问题就是它的图像数据的大小是 `32*32` 的，)
+
+[comment]: <> (  所以没有做一些放大缩小的操作获取对应的 High Resolution Image -> Low Resolution Image 的操作。)
   
-* `pytorch` 要非常注意一点就是它的 Tensor 和 `tensorflow` 或者 `keras` 不一样，可能 `tensorflow` `keras` 是以
-  `Size * H * W * C` 而 `pytorch` 是以 `Size * C * H * W` 的方式去计算的，所以使用的数据需要通过 `torch.permute` 的 方式修改数据格式。
+[comment]: <> (* 做的 `Keras` 和 `Tensorflow` 的训练并没有像 `Pytorch` 一样使用 `tqdm` 模块去做一些操作。  )
   
-* `pytorch` 的复现有许多代码上的不理解，后续慢慢解决。
+[comment]: <> (* `pytorch` 要非常注意一点就是它的 Tensor 和 `tensorflow` 或者 `keras` 不一样，可能 `tensorflow` `keras` 是以)
+
+[comment]: <> (  `Size * H * W * C` 而 `pytorch` 是以 `Size * C * H * W` 的方式去计算的，所以使用的数据需要通过 `torch.permute` 的 方式修改数据格式。)
+  
+[comment]: <> (* `pytorch` 的复现有许多代码上的不理解，后续慢慢解决。)
   
 
 ## Result
+
+以下是 `EDSR` 的 `result table`:
+
+| Dataset | Epochs | Module | Method | psnr  | 
+| ------- | ------ | ------ | ------ | ----- |
+| BSD500  |  200   | EDSR   | pytorch| 23.38 |
+| BSD500  |  400   | EDSR   | pytorch| 23.18 |
+
+
+训练了 200 个 Epochs 的 `EDSR`:
+  
+
+| Bicubic | High Resolution | Super Resolution |
+|---------|---------------- |----------------- | 
+![avatar](edsr_torch_model_file/training_results/SRF_4/epoch_200_index_5.png)
+![avatar](edsr_torch_model_file/training_results/SRF_4/epoch_200_index_16.png)
+  
+
+
+训练了 400 个 Epochs 的 `EDSR`:
+  
+
+| Bicubic | High Resolution | Super Resolution |
+|---------|---------------- |----------------- | 
+![avatar](edsr_torch_model_file/statistics/epoch_400_index_5.png)
+![avatar](edsr_torch_model_file/statistics/epoch_400_index_16.png)
+  
+
+
+
   
 以下是 `VDSR` 的 `result table` :  
 
@@ -96,6 +130,7 @@ For testing, `python trains.py` 暂时没有写对应的 `test.py`
 | ------- | ------ | ------ | ------ | ---- |
 | BSD500  |  200   | SRGAN  | pytorch| 22.4 |
 | BSD500  |  400   | SRGAN  | pytorch| 22.6 |
+
 
 
 [comment]: <> (训练了 200 个 Epochs 的 `SRGAN` ：)
@@ -151,7 +186,6 @@ The 91-image, Set5 dataset converted to HDF5 can be downloaded from the links be
 | Set5 | 2 | Eval | [Download](https://www.dropbox.com/s/r8qs6tp395hgh8g/Set5_x2.h5?dl=0) |
 | Set5 | 3 | Eval | [Download](https://www.dropbox.com/s/58ywjac4te3kbqq/Set5_x3.h5?dl=0) |
 | Set5 | 4 | Eval | [Download](https://www.dropbox.com/s/0rz86yn3nnrodlb/Set5_x4.h5?dl=0) |
-
 
 
 * [liliumao/Tensorflow-srcnn](https://github.com/liliumao/Tensorflow-srcnn) 

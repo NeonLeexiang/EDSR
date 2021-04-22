@@ -9,7 +9,6 @@ import torchvision
 
 from torch.autograd import Variable
 
-import EDSR_model.edsr_model_pytorch
 from edsr_torch_data_utils import TrainDatasets, ValDatasets, display_transform
 from torch.utils.data import DataLoader
 import os
@@ -35,10 +34,6 @@ def train_and_test_pytorch_vdsr(
     if not os.path.exists(model_save_dir):
         os.mkdir(model_save_dir)
 
-    out_path = os.path.join(model_save_dir, 'training_results/SRF_' + str(upscale_factor) + '/')
-    if not os.path.exists(out_path):
-        os.mkdir(out_path)
-
     print('-' * 15 + '> start loading data... ', '[ {} ]'.format(datetime.now()))
 
     # dataloader and remember pytorch needs to write the dataloader file
@@ -55,7 +50,11 @@ def train_and_test_pytorch_vdsr(
     print('#----> generator parameters:', sum(param.numel() for param in net.parameters()))
 
     # criterion we use MSELoss
-    criterion = torch.nn.MSELoss()
+    '''
+        according to the paper, we use L1Loss instead of MSELoss for the training 
+    '''
+    # criterion = torch.nn.MSELoss()
+    criterion = torch.nn.L1Loss(size_average=False)
 
     if torch.cuda.is_available():
         net.cuda()
@@ -97,6 +96,11 @@ def train_and_test_pytorch_vdsr(
                                             running_results['loss'] / running_results['batch_sizes']))
 
         net.eval()
+
+        out_path = os.path.join(model_save_dir, 'training_results/SRF_' + str(upscale_factor) + '/')
+        if not os.path.exists(out_path):
+            os.mkdir(out_path)
+
         results['loss'].append(running_results['loss'] / running_results['batch_sizes'])
         results['psnr'].append(valing_results['psnr'])
         results['ssim'].append(valing_results['ssim'])
@@ -176,6 +180,7 @@ def train_and_test_pytorch_vdsr(
                 val_images = torch.chunk(val_images, val_images.size(0) // 15)
                 val_save_bar = tqdm(val_images, desc='[saving training results]')
                 index = 1
+
                 if epoch % 100 == 0:
                     for image in val_save_bar:
                         '''
