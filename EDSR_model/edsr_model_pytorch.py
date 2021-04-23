@@ -43,8 +43,26 @@ class MeanShift(nn.Conv2d):
 '''
 
 
+'''
+    according to the paper, they use res_scale=0.1 to set the res_block because:
+    
+    `EDSR` 的残差缩放 `Residual Scaling`    
+  
+  
+    EDSR 的作者认为提高网络模型性能的最简单方法是增加参数数量，堆叠的方式是在卷积神经网络中，堆叠多个层或通过增加滤波器的数量。
+    当考虑有限的复合资源时，增加宽度 (特征Channels的数量) F 而不是深度(层数) B 来最大化模型容量。
+    但是特征图的数量增加(太多的残差块)到一定水平以上会使训练过程在数值上不稳定。
+    残差缩放 (residual scaling) 即残差块在相加前，经过卷积处理的一路乘以一个小数 (作者用了0.1)。
+    在每个残差块中，在最后的卷积层之后放置恒定的缩放层。
+    当使用大量滤波器时，这些模块极大地稳定了训练过程。
+    在测试阶段，该层可以集成到之前的卷积层中，以提高计算效率。
+    使用上面三种网络对比图中提出的残差块（即结构类似于 SRResNet ，但模型在残差块之外没有 ReLU** 层）构建单尺度模型 EDSR。
+    此外，因为每个卷积层仅使用 64 个特征图，所以单尺度模型没有残差缩放层。
+'''
+
+
 class ResBlock(nn.Module):
-    def __init__(self, n_feats, kernel_size, padding, bias=False, bn=False, act=nn.ReLU(inplace=True), res_scale=1):
+    def __init__(self, n_feats, kernel_size, padding, bias=False, bn=False, act=nn.ReLU(inplace=True), res_scale=0.1):
         super(ResBlock, self).__init__()
         m = []
 
@@ -124,7 +142,7 @@ class Upsampler(nn.Sequential):
 
 
 class EDSR(nn.Module):
-    def __init__(self, n_channels=3, n_resblocks=32, n_feats=256, scale=4, res_scale=1, rgb_range=1):
+    def __init__(self, n_channels=3, n_resblocks=32, n_feats=256, scale=4, res_scale=0.1, rgb_range=1):
         super(EDSR, self).__init__()
 
         self.n_channels = n_channels

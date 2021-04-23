@@ -2,9 +2,100 @@
 
 同样是 `Super Resolution` 领域的一个经典文章，有了 `SRCNN` 的一个基础, 以及我们上次复现了 `VDSR` 还有 `SRGAN` 
 这次的论文复现我们选择复现 `EDSR` 它和 `SRGAN` 有着类似的 `ResBlock` 结构，只不过不同的是通过研究发现 `BatchNormal` 
-虽说对训练有着非常高的速度上面的提高，但是对结果的影响甚微，所以 `EDSR` 的 `ResBlock` 相对于 `SRGAN` 来说有着小小的区别。 
+虽说对训练有着非常高的速度上面的提高，但是对结果的影响甚微，所以 `EDSR` 的 `ResBlock` 相对于 `SRGAN` 来说有着小小的区别。
+它去除了 `SRGAN` 中表现非常不错的 `BatchNormal`, 同样的，也在模型的 `Loss` 上用了 `L1Loss` 而不是其他的 `MSELoss` 之类的。
 这一次我们直接把它搭建成我们比较常用的 `torch` 的方式。  
 <br> 这一次的 `torch` 复现利用以前的复现内容一下子就搭建起来了，后续也会慢慢的优化和review原来的代码。
+
+
+## EDSR 论文重点
+`EDSR` -> [Enhanced Deep Residual Networks for Single Image Super-Resolution](https://arxiv.org/abs/1707.02921)
+
+作者提出的模型主要是提高了图像超分辨的效果，并赢得了NTIRE2017超分辨率重建挑战赛。
+做出的修改主要是在ResNet上。
+作者移除了残差结构中一些不必要的模块如BN层，结果证明这样确实有效果。
+另外，作者还提出了一种多尺度模型，不同的尺度下有绝大部分参数都是共享的。
+这样的模型在处理每一个单尺度超分辨下都能有很好的效果。
+
+#### EDSR 的特别之处
+ * `EDSR` 最有意义的模型性能提升是去除掉了 `SRResNet` 的批量标准化 (batch normalization, BN) 层。   
+     
+
+    由于批量标准化层对特征进行了规范化，因此通过规范化特征可以摆脱网络的范围可变性，最好将其删除，从而可以扩大模型的尺寸来提升结果质量。
+    此外，由于 BN 层消耗的内存量与前面的卷积层相同，因此去掉BN层后，`EDSR` 的 GPU 内存使用量也会减少。
+    与 `SRResNet` 相比，由于 BN 层的计算量和一个卷积层几乎持平，baseline 模型没有批量标准化层，在训练期间可节省大约40％的内存使用量。
+    因此，可以在有限的计算资源下构建一个比传统 ResNet 结构具有更好性能的更大模型。
+   
+ * `EDSR` 使用的损失函数是 `L1Loss`  
+     
+
+    训练时，损失函数用 L1 而不是 L2 ，即根据 `LapSRN` 的思想采用了 L1 范数来计算对应的误差，L2 损失会导致模糊的预测。
+    BN 有一定的正则化效果，可以不去理会 Dropout ，L2 正则项参数的选择。
+    除此之外，更深层的原因是是实际图像可能含有多种特征，对应有关的图像构成的真实分布。
+    图像特征分布有许多个峰值，比如特征1是一个峰，特征2是一个峰...
+    对于这种图像分布，我们称之为：多模态 (Multimodal) 。
+    假如用 MSE（或者 L2 ）作为损失函数，其潜在的假设是我们采集到的样本是都来在同一个高斯分布。
+    但是生活中的实际图像具有多种特征，而且大部分图像分布都不只有一个峰。
+    如果强行用一个单峰的高斯分布，去拟合一个多模态的数据分布，例如两个峰值。
+    因为损失函数需要减小生成分布和数据集经验分布（双峰分布）直接的差距，而生成分布具有两种类型，模型会尽力去“满足”这两个子分布，最后得到的优化结果。
+    
+    简而言之，当我们在使用L2损失训练出来的分布中采样时，虽然采集到的样本属于数据集真实分布的几率很低，但是由于处于中间位置，会被大量采集出来。 
+    故我们最终得到的生成样本实质上是多种特征的数据样本特征信息的平均效果，故产生模糊图像。 
+    也就是生成的图像中的某些信息很可能不属于特征所要表现的任何一个
+
+ * `EDSR` 的残差缩放 `Residual Scaling`    
+  
+  
+    EDSR 的作者认为提高网络模型性能的最简单方法是增加参数数量，堆叠的方式是在卷积神经网络中，堆叠多个层或通过增加滤波器的数量。
+    当考虑有限的复合资源时，增加宽度 (特征Channels的数量) F 而不是深度(层数) B 来最大化模型容量。
+    但是特征图的数量增加(太多的残差块)到一定水平以上会使训练过程在数值上不稳定。
+    残差缩放 (residual scaling) 即残差块在相加前，经过卷积处理的一路乘以一个小数 (作者用了0.1)。
+    在每个残差块中，在最后的卷积层之后放置恒定的缩放层。
+    当使用大量滤波器时，这些模块极大地稳定了训练过程。
+    在测试阶段，该层可以集成到之前的卷积层中，以提高计算效率。
+    使用上面三种网络对比图中提出的残差块（即结构类似于 SRResNet ，但模型在残差块之外没有 ReLU** 层）构建单尺度模型 EDSR。
+    此外，因为每个卷积层仅使用 64 个特征图，所以单尺度模型没有残差缩放层。
+
+
+#### BatchNormal layer 的介绍
+ * `BatchNormal` 的介绍  
+   
+
+    Batch Norm可谓深度学习中非常重要的技术，不仅可以使训练更深的网络变容易，加速收敛，还有一定正则化的效果，可以防止模型过拟合。在很多基于CNN的分类任务中，被大量使用。
+    但在图像超分辨率和图像生成方面，BatchNorm的表现并不是很好。当这些任务中，网络加入了BatchNorm层，反而使得训练速度缓慢且不稳定，甚至最后结果发散。
+
+
+ * Super Resolution 上使用 `BatchNormal` 不好的原因
+  
+ 
+    以图像超分辨率来说，网络输出的图像在色彩、对比度、亮度上要求和输入一致，改变的仅仅是分辨率和一些细节。
+    而Batch Norm，对图像来说类似于一种对比度的拉伸，任何图像经过Batch Norm后，其色彩的分布都会被归一化。
+    也就是说，它破坏了图像原本的对比度信息，所以Batch Norm的加入反而影响了网络输出的质量。
+    ResNet可以用BN，但也仅仅是在残差块当中使用。
+    还是回到SRResNet，上图的(b)就是一个用于图像超分辨率的残差网络。
+
+
+ * `SRGAN` 上用 `BatchNormal` 的原因
+
+
+    ResNet中引入了一种叫残差网络结构，其和普通的CNN的区别在于从输入源直接向输出源多连接了一条传递线来恒等映射，用来进行残差计算。
+    可以把这种连接方式叫做identity shortcut connection,或者我们也可以称其为skip connection。
+    其效果是为了防止网络层数增加而导致的梯度弥散问题与退化问题。
+
+
+ * `BatchNormal` 在分类问题上面 
+   
+
+    图像分类不需要保留图像的对比度信息，利用图像的结构信息就可以完成分类。
+    所以，将图像信息都通过BatchNorm进行归一化，反而降低训练难度。
+    甚至，一些不明显的结构，在BatchNorm后也会被凸显出来（对比度被拉开）。
+
+ * `BatchNormal` 简而言之
+
+
+    BN会是网络训练时使数据包含忽略图像像素（或者特征）之间的绝对差异（因为均值归零，方差归一），而只存在相对差异。
+    所以在不需要绝对差异的任务中（比如分类），BN提升效果。
+    而对于图像超分辨率这种需要利用绝对差异的任务，BN会适得其反。
 
 
 ## 以下是对应的之前 Super Resolution 的论文重点：
@@ -32,6 +123,7 @@
 #### SRGAN
 `SRGAN` [" Photo-Realistic Single Image Super-Resolution Using a Generative Adversarial Network"](https://arxiv.org/abs/1609.04802)  
 运用了 `SR Res Net` 的概念，运用了残差
+
 
 
 ## Datasets
@@ -167,14 +259,26 @@ For testing, `python trains.py` 暂时没有写对应的 `test.py`
 [comment]: <> (后续也不因数据集问题做更多的尝试和改进。整个内容当作对 `tensorflow > 2.0`  的一个入门尝试。)
 
 ## References
+`EDSR` -> [Enhanced Deep Residual Networks for Single Image Super-Resolution](https://arxiv.org/abs/1707.02921)
 
-A PyTorch implementation of SRGAN based on CVPR 2017 paper
+```
+@InProceedings{Lim_2017_CVPR_Workshops,
+  author = {Lim, Bee and Son, Sanghyun and Kim, Heewon and Nah, Seungjun and Lee, Kyoung Mu},
+  title = {Enhanced Deep Residual Networks for Single Image Super-Resolution},
+  booktitle = {The IEEE Conference on Computer Vision and Pattern Recognition (CVPR) Workshops},
+  month = {July},
+  year = {2017}
+}
+```
   
-This repository is implementation of the [" Photo-Realistic Single Image Super-Resolution Using a Generative Adversarial Network"](https://arxiv.org/abs/1609.04802).
 
-And code ["leftthomas/SRGAN"](https://github.com/leftthomas/SRGAN)
+A PyTorch implementation of `EDSR` based on CVPR 2017 paper
+  
+This repository is implementation of the [Enhanced Deep Residual Networks for Single Image Super-Resolution](https://arxiv.org/abs/1707.02921)
+And code [sanghyun-son/EDSR-PyTorch](https://github.com/sanghyun-son/EDSR-PyTorch)
 
-## Train
+
+## More Datasets
 
 The 91-image, Set5 dataset converted to HDF5 can be downloaded from the links below.
 
@@ -187,10 +291,4 @@ The 91-image, Set5 dataset converted to HDF5 can be downloaded from the links be
 | Set5 | 3 | Eval | [Download](https://www.dropbox.com/s/58ywjac4te3kbqq/Set5_x3.h5?dl=0) |
 | Set5 | 4 | Eval | [Download](https://www.dropbox.com/s/0rz86yn3nnrodlb/Set5_x4.h5?dl=0) |
 
-
-* [liliumao/Tensorflow-srcnn](https://github.com/liliumao/Tensorflow-srcnn) 
-  * - I referred to this repository which is same implementation using Matlab code and Caffe model.
-<br>
-
-* [carpedm20/DCGAN-tensorflow](https://github.com/carpedm20/DCGAN-tensorflow) 
 
